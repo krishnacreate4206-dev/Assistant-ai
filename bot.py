@@ -13,22 +13,29 @@ conn = sqlite3.connect("agent_memory.db", check_same_thread=False)
 conn.execute("""CREATE TABLE IF NOT EXISTS memory (
     key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)""")
 
+
 def remember(key: str, value: str) -> str:
-    conn.execute("INSERT OR REPLACE INTO memory VALUES (?, ?, datetime('now'))", (key, value))
+    conn.execute(
+        "INSERT OR REPLACE INTO memory VALUES (?, ?, datetime('now'))", (key, value))
     conn.commit()
     return "saved"
 
+
 def recall(key: str) -> str:
-    row = conn.execute("SELECT value FROM memory WHERE key=?", (key,)).fetchone()
+    row = conn.execute(
+        "SELECT value FROM memory WHERE key=?", (key,)).fetchone()
     return row[0] if row else "nothing stored under that key"
+
 
 def forget(key: str) -> str:
     conn.execute("DELETE FROM memory WHERE key=?", (key,))
     conn.commit()
     return "deleted"
 
+
 TOOL_FUNCTIONS = {"remember": remember, "recall": recall, "forget": forget}
-RISKY_TOOLS = {"forget"}  # add send_email, delete_file, etc. here later, same pattern
+# add send_email, delete_file, etc. here later, same pattern
+RISKY_TOOLS = {"forget"}
 
 tools = [
     {"type": "google_search"},
@@ -46,6 +53,7 @@ tools = [
 # --- safety gate ---
 PENDING_CONFIRM = {}
 
+
 async def ask_confirmation(bot, chat_id, name, tool_args):
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("Yes", callback_data="confirm_yes"),
@@ -57,7 +65,9 @@ async def ask_confirmation(bot, chat_id, name, tool_args):
     await event.wait()
     return PENDING_CONFIRM.pop(chat_id)["approved"]
 
-async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def handle_confirmation(
+        update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat_id
@@ -68,6 +78,7 @@ async def handle_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # --- the agent loop ---
 LAST_INTERACTION = {}
+
 
 async def run_agent(bot, chat_id: int, goal: str) -> str:
     interaction = client.interactions.create(
@@ -83,7 +94,8 @@ async def run_agent(bot, chat_id: int, goal: str) -> str:
         step = fc_steps[0]
         if step.name in RISKY_TOOLS:
             approved = await ask_confirmation(bot, chat_id, step.name, step.arguments)
-            output = TOOL_FUNCTIONS[step.name](**step.arguments) if approved else "User declined this action."
+            output = TOOL_FUNCTIONS[step.name](
+                **step.arguments) if approved else "User declined this action."
         else:
             output = TOOL_FUNCTIONS[step.name](**step.arguments)
 
@@ -94,12 +106,16 @@ async def run_agent(bot, chat_id: int, goal: str) -> str:
                     "call_id": step.id, "result": [{"type": "text", "text": str(output)}]}]
         )
 
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = await run_agent(context.bot, update.effective_chat.id, update.message.text)
     await update.message.reply_text(reply)
 
 print("Bot is running...")
 app = Application.builder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_message))
 app.add_handler(CallbackQueryHandler(handle_confirmation))
 app.run_polling()
